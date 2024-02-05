@@ -4,3 +4,4 @@ from geoalchemy2.types.dialects import geopackage  # noqa
 from geoalchemy2.types.dialects import mysql  # noqa
 from geoalchemy2.types.dialects import postgresql  # noqa
 from geoalchemy2.types.dialects import sqlite  # noqa
+from geoalchemy2.types.dialects import mssql  # noqa

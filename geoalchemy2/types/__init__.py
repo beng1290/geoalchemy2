@@ -41,6 +41,7 @@ def select_dialect(dialect_name):
         "mysql": dialects.mysql,
         "postgresql": dialects.postgresql,
         "sqlite": dialects.sqlite,
+        "mssql": dialects.sqlite,
     }
     return known_dialects.get(dialect_name, dialects.common)
 
