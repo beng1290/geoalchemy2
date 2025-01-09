@@ -4,6 +4,7 @@ The :class:`geoalchemy2.types.Geometry`, :class:`geoalchemy2.types.Geography`, a
 :class:`geoalchemy2.types.Raster` classes are used when defining geometry, geography and raster
 columns/properties in models.
 """
+
 import warnings
 from typing import Any
 from typing import Dict
@@ -39,6 +40,7 @@ def select_dialect(dialect_name):
     known_dialects = {
         "geopackage": dialects.geopackage,
         "mysql": dialects.mysql,
+        "mariadb": dialects.mariadb,
         "postgresql": dialects.postgresql,
         "sqlite": dialects.sqlite,
         "mssql": dialects.sqlite,
@@ -114,14 +116,14 @@ class _GISType(UserDefinedType):
 
     def __init__(
         self,
-        geometry_type="GEOMETRY",
+        geometry_type: Optional[str] = "GEOMETRY",
         srid=-1,
         dimension=2,
         spatial_index=True,
         use_N_D_index=False,
-        use_typmod=None,
-        from_text=None,
-        name=None,
+        use_typmod: Optional[bool] = None,
+        from_text: Optional[str] = None,
+        name: Optional[str] = None,
         nullable=True,
         _spatial_index_reflected=None,
     ) -> None:
@@ -159,7 +161,7 @@ class _GISType(UserDefinedType):
                 kwargs = {}
                 if self.srid > 0:
                     kwargs["srid"] = self.srid
-                if self.extended is not None and dialect.name != "mysql":
+                if self.extended is not None and dialect.name not in ["mysql", "mariadb"]:
                     kwargs["extended"] = self.extended
                 return self.ElementType(value, **kwargs)
 
@@ -180,8 +182,9 @@ class _GISType(UserDefinedType):
     @staticmethod
     def check_ctor_args(geometry_type, srid, dimension, use_typmod, nullable):
         try:
-            srid = int(srid)
-        except ValueError:
+            # passing default SRID if it is NULL from DB
+            srid = int(srid if srid is not None else -1)
+        except (ValueError, TypeError):
             raise ArgumentError("srid must be convertible to an integer")
         if geometry_type:
             geometry_type = geometry_type.upper()
@@ -197,7 +200,8 @@ class _GISType(UserDefinedType):
 
 
 @compiles(_GISType, "mysql")
-def get_col_spec(self, *args, **kwargs):
+@compiles(_GISType, "mariadb")
+def get_col_spec_mysql(self, compiler, *args, **kwargs):
     if self.geometry_type is not None:
         spec = "%s" % self.geometry_type
     else:
@@ -205,7 +209,7 @@ def get_col_spec(self, *args, **kwargs):
 
     if not self.nullable or self.spatial_index:
         spec += " NOT NULL"
-    if self.srid > 0:
+    if self.srid > 0 and compiler.dialect.name != "mariadb":
         spec += " SRID %d" % self.srid
     return spec
 

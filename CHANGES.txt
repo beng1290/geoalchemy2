@@ -1,6 +1,54 @@
 GeoAlchemy 2 Changelog
 ======================
 
+0.16.0
+------
+
+* Test: Add test in test_functional.py for custom Geometry that uses WKT elements @adrien-berchet (#525)
+* Add option to ensure all dialects are properly tested in CI @adrien-berchet (#526)
+* Improve MariaDB support @adrien-berchet (#524)
+
+0.15.2
+------
+
+* Fix: Can handle negative coordinates with Spatialite @adrien-berchet (#517)
+
+0.15.1
+------
+
+* Fix: Default SRID is bypassed when using floating point coordinates @aballet (#509)
+* Test: Dispose of the connection pools of the test engines @adrien-berchet (#511)
+
+0.15.0
+------
+
+* Specific process for geometries with Z or M coordinate with SpatiaLite dialect @spd5 (#506)
+* Chore: Fix type hints on stubs @adrien-berchet (#504)
+
+0.14.7
+------
+
+* Allow geometry_type to be None at the type level to match documentation @logankaser (#500)
+* CI: Fix Py312 job in tox @adrien-berchet (#501)
+* Docs: Add Zenodo badge on the main page @adrien-berchet (#498)
+
+0.14.6
+------
+
+* Fix: Fix specific compilation rules for MariaDB @adrien-berchet (#495)
+
+0.14.5
+------
+
+* Feat: Add experimental support for MariaDB @tebrown (#491)
+* CI: Setup pre-commit.ci @adrien-berchet (#492)
+
+0.14.4
+------
+
+* Type: Fix modified check_ctor_args to pass default SRS_ID value in case of null @satyamsoni2211 (#488)
+* Build: Add Py312 support @adrien-berchet (#487)
+
 0.14.3
 ------
 

@@ -1,4 +1,5 @@
 """Test alembic migrations of spatial columns."""
+
 import pytest
 import sqlalchemy as sa  # noqa (This import is only used in the migration scripts)
 from alembic import command
@@ -38,7 +39,7 @@ class TestAutogenerate:
                 Geometry(
                     geometry_type="LINESTRING",
                     srid=4326,
-                    nullable=dialect_name != "mysql",
+                    nullable=dialect_name not in ["mysql", "mariadb"],
                 ),
             ),
             schema=Lake.__table__.schema,

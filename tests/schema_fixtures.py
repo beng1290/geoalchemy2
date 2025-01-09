@@ -1,4 +1,5 @@
 """Declare tables used in tests."""
+
 import pytest
 from sqlalchemy import Column
 from sqlalchemy import Integer
@@ -119,7 +120,7 @@ class TransformedGeometry(TypeDecorator):
         SRID of the resulting WKBElement is correct"""
         return getattr(func, self.impl.as_binary)(
             func.ST_Transform(col, self.app_srid),
-            type_=self.__class__.impl(srid=self.app_srid)
+            type_=self.__class__.impl(srid=self.app_srid),
             # srid could also be -1 so that the SRID is deduced from the
             # WKB data
         )
@@ -188,7 +189,7 @@ def reflection_tables_metadata(dialect_name):
             geom_no_idx = Column(
                 Geometry(geometry_type="LINESTRING", srid=4326, spatial_index=False)
             )
-            if dialect_name != "mysql":
+            if dialect_name not in ["mysql", "mariadb"]:
                 geom_z = Column(Geometry(geometry_type="LINESTRINGZ", srid=4326, dimension=3))
                 geom_m = Column(Geometry(geometry_type="LINESTRINGM", srid=4326, dimension=3))
                 geom_zm = Column(Geometry(geometry_type="LINESTRINGZM", srid=4326, dimension=4))

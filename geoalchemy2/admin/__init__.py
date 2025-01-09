@@ -1,4 +1,5 @@
 """This module defines the functions used for administration tasks."""
+
 from sqlalchemy import Column
 from sqlalchemy import Index
 from sqlalchemy import Table
@@ -19,6 +20,7 @@ def select_dialect(dialect_name):
     known_dialects = {
         "geopackage": dialects.geopackage,
         "mysql": dialects.mysql,
+        "mariadb": dialects.mysql,
         "postgresql": dialects.postgresql,
         "sqlite": dialects.sqlite,
         "mssql": dialects.mssql,

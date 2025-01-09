@@ -11,7 +11,7 @@ else:
     compat.register()
     del compat
 
-from pkg_resources import parse_version
+from packaging.version import parse as parse_version
 from shapely.geometry import LineString
 from shapely.geometry import Point
 from sqlalchemy import CheckConstraint
@@ -249,6 +249,7 @@ class TestInsertionCore:
 
         row = rows[0]
         assert isinstance(row[1], WKBElement)
+        wkt = conn.execute(from_shape(LineString([[0, 0], [3, 3]]), srid=4326).ST_AsText()).scalar()
         wkt = conn.execute(row[1].ST_AsText()).scalar()
         assert format_wkt(wkt) == "LINESTRING(0 0,1 1)"
         srid = conn.execute(row[1].ST_SRID()).scalar()
@@ -275,6 +276,153 @@ class TestInsertionCore:
         srid = conn.execute(row[1].ST_SRID()).scalar()
         assert srid == 4326
 
+    @pytest.mark.parametrize(
+        "geom_type,wkt",
+        [
+            pytest.param("POINT", "(1 2)", id="Point"),
+            pytest.param("POINTZ", "(1 2 3)", id="Point Z"),
+            pytest.param("POINTM", "(1 2 3)", id="Point M"),
+            pytest.param("POINTZM", "(1 2 3 4)", id="Point ZM"),
+            pytest.param("LINESTRING", "(1 2, 3 4)", id="LineString"),
+            pytest.param("LINESTRINGZ", "(1 2 3, 4 5 6)", id="LineString Z"),
+            pytest.param("LINESTRINGM", "(1 2 3, 4 5 6)", id="LineString M"),
+            pytest.param("LINESTRINGZM", "(1 2 3 4, 5 6 7 8)", id="LineString ZM"),
+            pytest.param("POLYGON", "((1 2, 3 4, 5 6, 1 2))", id="Polygon"),
+            pytest.param("POLYGONZ", "((1 2 3, 4 5 6, 7 8 9, 1 2 3))", id="Polygon Z"),
+            pytest.param("POLYGONM", "((1 2 3, 4 5 6, 7 8 9, 1 2 3))", id="Polygon M"),
+            pytest.param(
+                "POLYGONZM", "((1 2 3 4,  5 6 7 8, 9 10 11 12, 1 2 3 4))", id="Polygon ZM"
+            ),
+            pytest.param("MULTIPOINT", "(1 2, 3 4)", id="Multi Point"),
+            pytest.param("MULTIPOINTZ", "(1 2 3, 4 5 6)", id="Multi Point Z"),
+            pytest.param("MULTIPOINTM", "(1 2 3, 4 5 6)", id="Multi Point M"),
+            pytest.param("MULTIPOINTZM", "(1 2 3 4, 5 6 7 8)", id="Multi Point ZM"),
+            pytest.param("MULTILINESTRING", "((1 2, 3 4), (10 20, 30 40))", id="Multi LineString"),
+            pytest.param(
+                "MULTILINESTRINGZ",
+                "((1 2 3, 4 5 6), (10 20 30, 40 50 60))",
+                id="Multi LineString Z",
+            ),
+            pytest.param(
+                "MULTILINESTRINGM",
+                "((1 2 3, 4 5 6), (10 20 30, 40 50 60))",
+                id="Multi LineString M",
+            ),
+            pytest.param(
+                "MULTILINESTRINGZM",
+                "((1 2 3 4, 5 6 7 8), (10 20 30 40, 50 60 70 80))",
+                id="Multi LineString ZM",
+            ),
+            pytest.param(
+                "MULTIPOLYGON",
+                "(((1 2, 3 4, 5 6, 1 2)), ((10 20, 30 40, 50 60, 10 20)))",
+                id="Multi Polygon",
+            ),
+            pytest.param(
+                "MULTIPOLYGONZ",
+                "(((1 2 3, 4 5 6, 7 8 9, 1 2 3)), ((10 20 30, 40 50 60, 70 80 90, 10 20 30)))",
+                id="Multi Polygon Z",
+            ),
+            pytest.param(
+                "MULTIPOLYGONM",
+                "(((1 2 3, 4 5 6, 7 8 9, 1 2 3)), ((10 20 30, 40 50 60, 70 80 90, 10 20 30)))",
+                id="Multi Polygon M",
+            ),
+            pytest.param(
+                "MULTIPOLYGONZM",
+                "(((1 2 3 4, 5 6 7 8, 9 10 11 12, 1 2 3 4)),"
+                " ((10 20 30 40, 50 60 70 80, 90 100 100 120, 10 20 30 40)))",
+                id="Multi Polygon ZM",
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "use_floating_point",
+        [
+            pytest.param(True, id="Use floating point"),
+            pytest.param(False, id="Do not use floating point"),
+        ],
+    )
+    def test_insert_all_geom_types(
+        self, dialect_name, base, conn, metadata, geom_type, wkt, use_floating_point
+    ):
+        """Test insertion and selection of all geometry types."""
+        ndims = 2
+        if "Z" in geom_type[-2:]:
+            ndims += 1
+        if geom_type.endswith("M"):
+            ndims += 1
+            has_m = True
+        else:
+            has_m = False
+
+        if ndims > 2 and dialect_name in ["mysql", "mariadb"]:
+            # Explicitly skip MySQL dialect to show that it can only work with 2D geometries
+            pytest.xfail(reason="MySQL only supports 2D geometry types")
+
+        class GeomTypeTable(base):
+            __tablename__ = "test_geom_types"
+            id = Column(Integer, primary_key=True)
+            geom = Column(Geometry(srid=4326, geometry_type=geom_type, dimension=ndims))
+
+        metadata.drop_all(bind=conn, checkfirst=True)
+        metadata.create_all(bind=conn)
+
+        if use_floating_point:
+            wkt = wkt.replace("1 2", "1.5 2.5")
+
+        inserted_wkt = f"{geom_type}{wkt}"
+
+        inserted_elements = [
+            {"geom": inserted_wkt},
+            {"geom": f"SRID=4326;{inserted_wkt}"},
+            {"geom": WKTElement(inserted_wkt, srid=4326)},
+            {"geom": WKTElement(f"SRID=4326;{inserted_wkt}")},
+        ]
+        if dialect_name not in ["postgresql", "sqlite"] or not has_m:
+            # Use the DB to generate the corresponding raw WKB
+            raw_wkb = conn.execute(
+                text("SELECT ST_AsBinary(ST_GeomFromText('{}', 4326))".format(inserted_wkt))
+            ).scalar()
+
+            wkb_elem = WKBElement(raw_wkb, srid=4326)
+
+            # Currently Shapely does not support geometry types with M dimension
+            inserted_elements.append({"geom": wkb_elem})
+            inserted_elements.append({"geom": wkb_elem.as_ewkb()})
+
+        # Insert the elements
+        conn.execute(
+            GeomTypeTable.__table__.insert(),
+            inserted_elements,
+        )
+
+        # Select the elements
+        query = select(
+            [
+                GeomTypeTable.__table__.c.id,
+                GeomTypeTable.__table__.c.geom.ST_AsText(),
+                GeomTypeTable.__table__.c.geom.ST_SRID(),
+            ],
+        )
+        results = conn.execute(query)
+        rows = results.all()
+
+        # Check that the selected elements are the same as the inputs
+        for row_id, row, srid in rows:
+            checked_wkt = row.upper().replace(" ", "")
+            expected_wkt = inserted_wkt.upper().replace(" ", "")
+            if "MULTIPOINT" in geom_type:
+                # Some dialects return MULTIPOINT geometries with nested parenthesis and others
+                # do not so we remove them before checking the results
+                checked_wkt = re.sub(r"\(([0-9\.]+)\)", "\\1", checked_wkt)
+            if row_id >= 5 and dialect_name in ["geopackage"] and has_m:
+                # Currently Shapely does not support geometry types with M dimension
+                assert checked_wkt != expected_wkt
+            else:
+                assert checked_wkt == expected_wkt
+            assert srid == 4326
+
     @test_only_with_dialects("postgresql", "sqlite")
     def test_insert_geom_poi(self, conn, Poi, setup_tables):
         conn.execute(
@@ -298,6 +446,30 @@ class TestInsertionCore:
             srid = conn.execute(row[1].ST_SRID()).scalar()
             assert srid == 4326
             assert row[1] == from_shape(Point(1, 1), srid=4326, extended=True)
+
+    def test_insert_negative_coords(self, conn, Poi, setup_tables, dialect_name):
+        conn.execute(
+            Poi.__table__.insert(),
+            [
+                {"geom": "SRID=4326;POINT(-1 1)"},
+                {"geom": WKTElement("POINT(-1 1)", srid=4326)},
+                {"geom": WKTElement("SRID=4326;POINT(-1 1)", extended=True)},
+                {"geom": from_shape(Point(-1, 1), srid=4326)},
+                {"geom": from_shape(Point(-1, 1), srid=4326, extended=True)},
+            ],
+        )
+
+        results = conn.execute(Poi.__table__.select())
+        rows = results.fetchall()
+
+        for row in rows:
+            assert isinstance(row[1], WKBElement)
+            wkt = conn.execute(row[1].ST_AsText()).scalar()
+            assert format_wkt(wkt) == "POINT(-1 1)"
+            srid = conn.execute(row[1].ST_SRID()).scalar()
+            assert srid == 4326
+            extended = dialect_name not in ["mysql", "mariadb"]
+            assert row[1] == from_shape(Point(-1, 1), srid=4326, extended=extended)
 
 
 class TestSelectBindParam:
@@ -344,7 +516,7 @@ class TestSelectBindParam:
         rows = results.fetchall()
         geom = rows[0][1]
         assert isinstance(geom, WKBElement)
-        if dialect_name == "mysql":
+        if dialect_name in ["mysql", "mariadb"]:
             assert geom.extended is False
         else:
             assert geom.extended is True
@@ -380,7 +552,7 @@ class TestInsertionORM:
         lake = Lake("LINESTRING(0 0,1 1)")
         session.add(lake)
 
-        if (dialect_name == "postgresql" and postgis_version < 3) or dialect_name == "sqlite":
+        if dialect_name == "postgresql" and postgis_version < 3:
             with pytest.raises((DataError, IntegrityError)):
                 session.flush()
         else:
@@ -392,7 +564,7 @@ class TestInsertionORM:
         session.flush()
         session.expire(lake)
         assert isinstance(lake.geom, WKBElement)
-        if dialect_name == "mysql":
+        if dialect_name in ["mysql", "mariadb"]:
             # Not extended case
             assert str(lake.geom) == (
                 "0102000000020000000000000000000000000000000000000000000"
@@ -415,7 +587,7 @@ class TestInsertionORM:
         session.flush()
         session.expire(lake)
         assert isinstance(lake.geom, WKBElement)
-        if dialect_name == "mysql":
+        if dialect_name in ["mysql", "mariadb"]:
             # Not extended case
             assert str(lake.geom) == (
                 "0102000000020000000000000000000000000000000000000000000"
@@ -494,7 +666,7 @@ class TestUpdateORM:
         srid = session.execute(lake.geom.ST_SRID()).scalar()
         assert srid == 4326
 
-        if dialect_name != "mysql":
+        if dialect_name not in ["mysql", "mariadb"]:
             # Set geometry to None
             lake.geom = None
 
@@ -536,7 +708,7 @@ class TestUpdateORM:
         srid = session.execute(lake.geom.ST_SRID()).scalar()
         assert srid == 4326
 
-        if dialect_name != "mysql":
+        if dialect_name not in ["mysql", "mariadb"]:
             # Set geometry to None
             lake.geom = None
 
@@ -587,7 +759,7 @@ class TestUpdateORM:
             session.flush()
             session.refresh(lake)
             assert lake.geom is None
-        elif dialect_name == "mysql":
+        elif dialect_name in ["mysql", "mariadb"]:
             with pytest.raises(OperationalError):
                 session.flush()
         else:
@@ -753,7 +925,7 @@ class TestShapely:
     def test_to_shape(self, session, Lake, setup_tables, dialect_name):
         if dialect_name in ["sqlite", "geopackage"]:
             data_type = str
-        elif dialect_name == "mysql":
+        elif dialect_name in ["mysql", "mariadb"]:
             data_type = bytes
         else:
             data_type = memoryview
@@ -1023,3 +1195,69 @@ class TestToMetadata(ComparesTables):
 
         # Check that the spatial index was not duplicated
         assert len(new_Lake.indexes) == 1
+
+
+class TestAsBinaryWKT:
+    def test_create_insert(self, conn, dialect_name):
+        class GeometryWkt(Geometry):
+            """Geometry type that uses WKT strings."""
+
+            from_text = "ST_GeomFromEWKT"
+            as_binary = "ST_AsText"
+            ElementType = WKTElement
+
+        dialects_with_srid = ["geopackage", "mysql", "mariadb"]
+
+        # Define the table
+        cols = [
+            Column("id", Integer, primary_key=True),
+        ]
+        cols.append(Column("geom_with_srid", GeometryWkt(geometry_type="LINESTRING", srid=4326)))
+        if dialect_name not in dialects_with_srid:
+            cols.append(Column("geom", GeometryWkt(geometry_type="LINESTRING")))
+        t = Table("use_wkt", MetaData(), *cols)
+
+        # Create the table
+        t.drop(bind=conn, checkfirst=True)
+        t.create(bind=conn)
+
+        # Test element insertion
+        inserted_values = [
+            {"geom_with_srid": v}
+            for v in [
+                "SRID=4326;LINESTRING(0 0,1 1)",
+                WKTElement("LINESTRING(0 0,2 2)", srid=4326),
+                WKTElement("SRID=4326;LINESTRING(0 0,3 3)", extended=True),
+                from_shape(LineString([[0, 0], [4, 4]]), srid=4326),
+            ]
+        ]
+        if dialect_name not in dialects_with_srid:
+            for i, v in zip(
+                inserted_values,
+                [
+                    "LINESTRING(0 0,1 1)",
+                    WKTElement("LINESTRING(0 0,2 2)"),
+                    WKTElement("SRID=-1;LINESTRING(0 0,3 3)", extended=True),
+                    from_shape(LineString([[0, 0], [4, 4]])),
+                ],
+            ):
+                i["geom"] = v
+
+        conn.execute(t.insert(), inserted_values)
+
+        results = conn.execute(t.select())
+        rows = results.fetchall()
+
+        for row_num, row in enumerate(rows):
+            for num, element in enumerate(row[1:]):
+                assert isinstance(element, WKTElement)
+                wkt = conn.execute(element.ST_AsText()).scalar()
+                assert format_wkt(wkt) == f"LINESTRING(0 0,{row_num + 1} {row_num + 1})"
+                srid = conn.execute(element.ST_SRID()).scalar()
+                if num == 1:
+                    assert srid == 0 if dialect_name != "sqlite" else -1
+                else:
+                    assert srid == 4326
+
+        # Drop the table
+        t.drop(bind=conn)

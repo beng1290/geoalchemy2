@@ -6,8 +6,9 @@ New ORM Declarative Mapping Style
 ``sqlalchemy.orm.DeclarativeBase`` base class.
 This example shows how to use GeoAlchemy2 types in this context.
 """
+
 import pytest
-from pkg_resources import parse_version
+from packaging.version import parse as parse_version
 from sqlalchemy import __version__ as SA_VERSION
 
 try:

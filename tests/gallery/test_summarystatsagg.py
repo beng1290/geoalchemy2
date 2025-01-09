@@ -5,8 +5,9 @@ Use CompositeType
 Some functions return composite types. This example shows how to deal with this
 kind of functions.
 """
+
 import pytest
-from pkg_resources import parse_version
+from packaging.version import parse as parse_version
 from sqlalchemy import Column
 from sqlalchemy import Float
 from sqlalchemy import Integer
